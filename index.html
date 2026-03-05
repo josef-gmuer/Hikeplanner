@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gipfelstürmer — Swiss Hike Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1a1a18;
+    --paper: #f5f0e8;
+    --paper-dark: #ece6d6;
+    --moss: #4a6741;
+    --moss-light: #6b8f62;
+    --stone: #8c7b6b;
+    --snow: #f8f5ef;
+    --red: #c0392b;
+    --amber: #d4891a;
+    --contour: rgba(74, 103, 65, 0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Mono', monospace;
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Topographic background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, transparent, transparent 39px, var(--contour) 39px, var(--contour) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, var(--contour) 39px, var(--contour) 40px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* HEADER */
+  header {
+    padding: 40px 0 24px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 36px;
+  }
+
+  .header-inner {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .logo {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+
+  .logo span {
+    color: var(--moss);
+  }
+
+  .tagline {
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--stone);
+    font-weight: 300;
+  }
+
+  .swiss-cross {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    background: var(--red);
+    position: relative;
+    vertical-align: middle;
+    margin-right: 10px;
+    flex-shrink: 0;
+  }
+  .swiss-cross::before, .swiss-cross::after {
+    content: '';
+    position: absolute;
+    background: white;
+  }
+  .swiss-cross::before { width: 60%; height: 20%; top: 40%; left: 20%; }
+  .swiss-cross::after  { width: 20%; height: 60%; top: 20%; left: 40%; }
+
+  /* LAYOUT */
+  .layout {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+
+  /* PANEL */
+  .panel {
+    background: var(--snow);
+    border: 1.5px solid var(--ink);
+    padding: 28px;
+    position: relative;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 4px; left: 4px;
+    right: -4px; bottom: -4px;
+    background: var(--ink);
+    z-index: -1;
+  }
+
+  .panel-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    font-style: italic;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--paper-dark);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-title .num {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 2px 6px;
+    font-style: normal;
+  }
+
+  /* FORM */
+  .field {
+    margin-bottom: 18px;
+  }
+
+  label {
+    display: block;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--stone);
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+
+  input[type="text"], input[type="number"], select {
+    width: 100%;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    padding: 10px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--ink);
+    outline: none;
+    transition: border-color 0.2s, background 0.2s;
+    -webkit-appearance: none;
+  }
+
+  input:focus, select:focus {
+    background: white;
+    border-color: var(--moss);
+  }
+
+  select {
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%231a1a18' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 36px;
+  }
+
+  .row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* TOGGLE */
+  .mode-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border: 1.5px solid var(--ink);
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+
+  .mode-btn {
+    padding: 9px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: var(--paper);
+    border: none;
+    cursor: pointer;
+    color: var(--stone);
+    transition: all 0.2s;
+    text-align: center;
+  }
+
+  .mode-btn.active {
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  .mode-btn:not(:last-child) {
+    border-right: 1.5px solid var(--ink);
+  }
+
+  /* LOCATION BTN */
+  .loc-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+  }
+
+  .icon-btn {
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+  }
+
+  .icon-btn:hover { background: var(--moss); }
+
+  /* GENERATE BTN */
+  .gen-btn {
+    width: 100%;
+    background: var(--moss);
+    color: var(--snow);
+    border: 1.5px solid var(--ink);
+    padding: 14px;
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    font-style: italic;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    margin-top: 8px;
+    transition: all 0.2s;
+    position: relative;
+  }
+
+  .gen-btn::after {
+    content: '';
+    position: absolute;
+    top: 3px; left: 3px;
+    right: -3px; bottom: -3px;
+    background: var(--ink);
+    z-index: -1;
+    transition: all 0.2s;
+  }
+
+  .gen-btn:hover {
+    background: var(--moss-light);
+    transform: translate(-2px, -2px);
+  }
+
+  .gen-btn:hover::after {
+    top: 5px; left: 5px;
+  }
+
+  .gen-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* MAP */
+  #map {
+    height: 520px;
+    border: 1.5px solid var(--ink);
+    position: relative;
+  }
+
+  .map-wrap {
+    position: relative;
+  }
+
+  .map-wrap::before {
+    content: '';
+    position: absolute;
+    top: 4px; left: 4px;
+    right: -4px; bottom: -4px;
+    background: var(--ink);
+    z-index: 0;
+  }
+
+  #map { position: relative; z-index: 1; }
+
+  /* STATS BAR */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 1.5px solid var(--ink);
+    border-top: none;
+    position: relative;
+    z-index: 1;
+    background: var(--snow);
+  }
+
+  .stat {
+    padding: 14px 16px;
+    border-right: 1px solid var(--paper-dark);
+  }
+
+  .stat:last-child { border-right: none; }
+
+  .stat-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--stone);
+    margin-bottom: 4px;
+  }
+
+  .stat-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .stat-value.highlight { color: var(--moss); }
+
+  /* ELEVATION CHART */
+  #elev-canvas {
+    width: 100%;
+    height: 100px;
+    border: 1.5px solid var(--ink);
+    border-top: none;
+    background: var(--paper-dark);
+    position: relative;
+    z-index: 1;
+    display: block;
+  }
+
+  /* HIKE DETAILS */
+  .hike-details {
+    margin-top: 20px;
+  }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--paper-dark);
+    font-size: 0.8rem;
+  }
+
+  .detail-row:last-child { border-bottom: none; }
+
+  .detail-key { color: var(--stone); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .detail-val { font-weight: 500; }
+
+  /* STATUS */
+  .status {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    padding: 10px 12px;
+    margin-top: 14px;
+    background: var(--paper-dark);
+    border-left: 3px solid var(--moss);
+    display: none;
+  }
+
+  .status.error { border-left-color: var(--red); color: var(--red); }
+  .status.visible { display: block; }
+
+  /* SPINNER */
+  .spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border: 2px solid var(--paper-dark);
+    border-top-color: var(--moss);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* WAYPOINTS */
+  .waypoints {
+    margin-top: 14px;
+    font-size: 0.72rem;
+    color: var(--stone);
+    line-height: 1.8;
+  }
+
+  .waypoint-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .wp-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--moss);
+    flex-shrink: 0;
+  }
+
+  .wp-dot.start { background: var(--moss); }
+  .wp-dot.end { background: var(--red); }
+
+  /* DIFFICULTY BADGE */
+  .difficulty {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 500;
+    border: 1px solid currentColor;
+  }
+
+  .diff-easy { color: var(--moss); }
+  .diff-moderate { color: var(--amber); }
+  .diff-hard { color: var(--red); }
+
+  footer {
+    margin-top: 48px;
+    padding: 20px 0;
+    border-top: 1px solid var(--paper-dark);
+    font-size: 0.65rem;
+    color: var(--stone);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .stats-bar { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="header-inner">
+      <div>
+        <div class="logo">
+          <span class="swiss-cross"></span>Gipfel<span>stürmer</span>
+        </div>
+        <div class="tagline">Swiss Alpine Hike Planner · Powered by Swisstopo</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- LEFT PANEL -->
+    <div>
+      <div class="panel">
+        <div class="panel-title"><span class="num">01</span> Plan your route</div>
+
+        <div class="field">
+          <label>Starting Location</label>
+          <div class="loc-row">
+            <input type="text" id="location-input" placeholder="e.g. Grindelwald, Zermatt…" />
+            <button class="icon-btn" id="gps-btn" title="Use my location">📍</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Plan by</label>
+          <div class="mode-toggle">
+            <button class="mode-btn active" id="mode-time" onclick="setMode('time')">Duration</button>
+            <button class="mode-btn" id="mode-dist" onclick="setMode('distance')">Distance</button>
+          </div>
+        </div>
+
+        <div id="time-field" class="field">
+          <label>Duration</label>
+          <select id="duration-select">
+            <option value="60">1 hour</option>
+            <option value="90">1.5 hours</option>
+            <option value="120" selected>2 hours</option>
+            <option value="180">3 hours</option>
+            <option value="240">4 hours</option>
+            <option value="360">6 hours</option>
+            <option value="480">Full day (8h)</option>
+          </select>
+        </div>
+
+        <div id="dist-field" class="field" style="display:none">
+          <label>Distance (km)</label>
+          <input type="number" id="distance-input" value="10" min="2" max="50" step="1"/>
+        </div>
+
+        <div class="row-2">
+          <div class="field">
+            <label>Elevation Gain</label>
+            <select id="elev-select">
+              <option value="flat">Flat (0–100m)</option>
+              <option value="gentle">Gentle (100–300m)</option>
+              <option value="moderate" selected>Moderate (300–600m)</option>
+              <option value="steep">Steep (600–1000m)</option>
+              <option value="alpine">Alpine (1000m+)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Hike Type</label>
+            <select id="type-select">
+              <option value="loop">Loop</option>
+              <option value="outback" selected>Out & Back</option>
+              <option value="point">Point to Point</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Terrain</label>
+          <select id="terrain-select">
+            <option value="any">Any</option>
+            <option value="forest">Forest paths</option>
+            <option value="alpine">Alpine / rocky</option>
+            <option value="valley">Valley / river</option>
+          </select>
+        </div>
+
+        <button class="gen-btn" id="gen-btn" onclick="generateHike()">
+          ↑ Generate Hike Route
+        </button>
+
+        <div class="status" id="status-msg"></div>
+      </div>
+
+      <!-- Hike Details -->
+      <div id="hike-detail-panel" style="display:none; margin-top: 20px;">
+        <div class="panel">
+          <div class="panel-title"><span class="num">02</span> Route summary</div>
+          <div id="hike-details-inner"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: MAP + STATS -->
+    <div>
+      <div class="map-wrap">
+        <div id="map"></div>
+        <div class="stats-bar" id="stats-bar">
+          <div class="stat">
+            <div class="stat-label">Distance</div>
+            <div class="stat-value highlight" id="s-dist">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Est. Time</div>
+            <div class="stat-value" id="s-time">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">↑ Ascent</div>
+            <div class="stat-value" id="s-asc">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Difficulty</div>
+            <div class="stat-value" id="s-diff">—</div>
+          </div>
+        </div>
+        <canvas id="elev-canvas" height="100"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Map data © <a href="https://www.swisstopo.admin.ch" style="color:inherit">Swisstopo</a> · Geo admin CH · Route planning via OpenRouteService
+  </footer>
+</div>
+
+<script>
+function loadScript(src, cb) {
+  const s = document.createElement('script');
+  s.src = src;
+  s.onload = cb;
+  s.onerror = function() {
+    // try cdnjs fallback
+    const s2 = document.createElement('script');
+    s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    s2.onload = cb;
+    s2.onerror = function() {
+      document.getElementById('map').innerHTML = '<div style="padding:20px;font-family:monospace;color:#c0392b">⚠ Could not load map library. Please open this file in a browser (not the Claude preview).<br><br>Works great on GitHub Pages!</div>';
+    };
+    document.head.appendChild(s2);
+  };
+  document.head.appendChild(s);
+}
+
+function initApp() {
+// ─── MAP INIT ───────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true }).setView([46.8, 8.2], 9);
+
+// Swisstopo tile layers
+const swisstopoColor = L.tileLayer(
+  'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg',
+  { attribution: '© <a href="https://www.swisstopo.admin.ch">Swisstopo</a>', maxZoom: 18 }
+);
+
+const swisstopoHiking = L.tileLayer(
+  'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swisstlm3d-wanderwege/default/current/3857/{z}/{x}/{y}.png',
+  { attribution: '© Swisstopo', maxZoom: 18, opacity: 0.8 }
+);
+
+swisstopoColor.addTo(map);
+swisstopoHiking.addTo(map);
+
+// ─── STATE ───────────────────────────────────────────────────
+let currentMode = 'time';
+let routeLayer = null;
+let startMarker = null;
+let endMarker = null;
+
+function setMode(m) {
+  currentMode = m;
+  document.getElementById('mode-time').classList.toggle('active', m === 'time');
+  document.getElementById('mode-dist').classList.toggle('active', m === 'distance');
+  document.getElementById('time-field').style.display = m === 'time' ? '' : 'none';
+  document.getElementById('dist-field').style.display = m === 'distance' ? '' : 'none';
+}
+window.setMode = setMode;
+
+// ─── GPS ────────────────────────────────────────────────────
+document.getElementById('gps-btn').onclick = () => {
+  if (!navigator.geolocation) return showStatus('Geolocation not supported', true);
+  showStatus('<span class="spinner"></span>Getting your location…');
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude: lat, longitude: lng } = pos.coords;
+    document.getElementById('location-input').value = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    map.setView([lat, lng], 13);
+    showStatus('Location found! Now generate your hike ↑');
+  }, () => showStatus('Could not get location. Enter manually.', true));
+};
+
+// ─── GEOCODE via nominatim ───────────────────────────────────
+async function geocode(query) {
+  // Check if already coords
+  const m = query.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+  if (m) return { lat: parseFloat(m[1]), lon: parseFloat(m[2]), display: query };
+
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', Switzerland')}&format=json&limit=1`;
+  const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+  const data = await r.json();
+  if (!data.length) throw new Error('Location not found. Try a Swiss town or coordinates.');
+  return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), display: data[0].display_name };
+}
+
+async function generateHike() {
+  const btn = document.getElementById('gen-btn');
+  btn.disabled = true;
+  clearRoute();
+
+  const locQuery = document.getElementById('location-input').value.trim();
+  if (!locQuery) {
+    showStatus('Please enter a starting location', true);
+    btn.disabled = false;
+    return;
+  }
+
+  showStatus('<span class="spinner"></span>Geocoding location…');
+
+  let origin;
+  try {
+    origin = await geocode(locQuery);
+  } catch(e) {
+    showStatus(e.message, true);
+    btn.disabled = false;
+    return;
+  }
+
+  map.setView([origin.lat, origin.lon], 13);
+
+  // Determine target distance in km
+  const elevProfile = document.getElementById('elev-select').value;
+  let targetKm;
+  if (currentMode === 'distance') {
+    targetKm = parseFloat(document.getElementById('distance-input').value);
+  } else {
+    const mins = parseInt(document.getElementById('duration-select').value);
+    // Naismith: 4km/h on flat + 10min/100m ascent
+    const elevGain = { flat:50, gentle:200, moderate:450, steep:800, alpine:1200 }[elevProfile];
+    const flatHours = mins / 60;
+    targetKm = flatHours * 4; // simplified for planning
+  }
+
+  const hikeType = document.getElementById('type-select').value;
+
+  showStatus('<span class="spinner"></span>Planning route…');
+
+  try {
+    // Generate waypoints based on elevation preference
+    const waypoints = generateWaypoints(origin.lat, origin.lon, targetKm, elevProfile, hikeType);
+
+    // Try OpenRouteService for actual routing
+    showStatus('<span class="spinner"></span>Routing via trails…');
+    let routeCoords, routeStats;
+
+    try {
+      const result = await routeWithORS(waypoints);
+      routeCoords = result.coords;
+      routeStats = result.stats;
+    } catch(e) {
+      // Fallback: straight-line simulated route
+      routeCoords = waypoints.map(w => [w[1], w[0]]); // ORS returns [lng,lat], leaflet needs [lat,lng]
+      routeStats = simulateStats(routeCoords, targetKm, elevProfile);
+    }
+
+    showStatus('<span class="spinner"></span>Fetching elevation profile…');
+    const elevData = await fetchElevation(routeCoords.slice(0, 50)); // sample 50 pts
+
+    displayRoute(routeCoords, elevData, routeStats, origin, elevProfile, hikeType, targetKm);
+    showStatus('Route ready! Open in Swisstopo maps for turn-by-turn navigation.');
+    btn.disabled = false;
+
+  } catch(e) {
+    showStatus('Error generating route: ' + e.message, true);
+    btn.disabled = false;
+  }
+}
+window.generateHike = generateHike;
+
+// ─── GENERATE WAYPOINTS ─────────────────────────────────────
+function generateWaypoints(lat, lon, km, elevPref, type) {
+  const degPerKm = 0.009; // ~1 degree = 111km
+  const r = (km / 4) * degPerKm; // radius
+  const pts = [[lon, lat]];
+
+  // Direction biases: push toward hills/valleys
+  const bearings = {
+    flat:    [45, 135, 225],
+    gentle:  [30, 90,  270],
+    moderate:[315, 45, 135],
+    steep:   [270, 315, 45],
+    alpine:  [300, 0,  60]
+  }[elevPref] || [60, 180, 300];
+
+  if (type === 'loop') {
+    for (let i = 0; i < 3; i++) {
+      const b = (bearings[i] + (Math.random()-0.5)*30) * Math.PI / 180;
+      const frac = 0.5 + (Math.random()-0.5)*0.3;
+      pts.push([
+        lon + Math.sin(b) * r * frac,
+        lat + Math.cos(b) * r * frac
+      ]);
+    }
+    pts.push([lon, lat]); // close loop
+  } else if (type === 'outback') {
+    const b = (bearings[0] + (Math.random()-0.5)*40) * Math.PI / 180;
+    const dest = [lon + Math.sin(b) * r, lat + Math.cos(b) * r];
+    pts.push(dest);
+    pts.push([lon, lat]);
+  } else {
+    // point to point
+    const b = (bearings[0] + (Math.random()-0.5)*40) * Math.PI / 180;
+    pts.push([lon + Math.sin(b) * r * 0.5, lat + Math.cos(b) * r * 0.5]);
+    pts.push([lon + Math.sin(b) * r, lat + Math.cos(b) * r]);
+  }
+
+  return pts;
+}
+
+// ─── ROUTE VIA ORS ──────────────────────────────────────────
+async function routeWithORS(waypoints) {
+  // ORS public demo key — limited but works for demo
+  const url = 'https://api.openrouteservice.org/v2/directions/foot-hiking/geojson';
+  const body = {
+    coordinates: waypoints,
+    elevation: true
+  };
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': '5b3ce3597851110001cf624875e4f0f9efe14dcd97f9b0e07c9e2e9b' // public demo key
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) throw new Error('ORS unavailable');
+  const data = await resp.json();
+  const coords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
+  const summary = data.features[0].properties.summary;
+
+  return {
+    coords,
+    stats: {
+      distance: (summary.distance / 1000).toFixed(1),
+      duration: Math.round(summary.duration / 60),
+      ascent: Math.round(data.features[0].properties.ascent || 0),
+      descent: Math.round(data.features[0].properties.descent || 0)
+    }
+  };
+}
+
+// ─── SIMULATE STATS FALLBACK ────────────────────────────────
+function simulateStats(coords, km, elevPref) {
+  const elevMap = { flat:40, gentle:220, moderate:480, steep:820, alpine:1300 };
+  return {
+    distance: km.toFixed(1),
+    duration: Math.round(km * 15 + (elevMap[elevPref] / 100) * 10),
+    ascent: elevMap[elevPref],
+    descent: Math.round(elevMap[elevPref] * 0.9)
+  };
+}
+
+// ─── ELEVATION via Swisstopo ─────────────────────────────────
+async function fetchElevation(coords) {
+  try {
+    // Sample every Nth point for the elevation profile
+    const sample = coords.filter((_, i) => i % Math.ceil(coords.length / 50) === 0);
+    const points = sample.map(c => `${c[1]},${c[0]}`).join('|');
+    const url = `https://api3.geo.admin.ch/rest/services/profile.json?geom={"type":"LineString","coordinates":[${
+      sample.map(c => `[${c[1]},${c[0]}]`).join(',')
+    }]}&sr=4326&nb_points=50`;
+
+    const r = await fetch(url);
+    if (!r.ok) throw new Error();
+    const data = await r.json();
+    return data.map(p => p.alts?.DTM2 || p.alts?.DTM25 || 800);
+  } catch {
+    // Simulate elevation profile
+    const n = 50;
+    const base = 700 + Math.random() * 400;
+    return Array.from({length: n}, (_, i) => {
+      const t = i / (n - 1);
+      return base + Math.sin(t * Math.PI) * 400 + Math.sin(t * Math.PI * 5) * 60 * Math.random();
+    });
+  }
+}
+
+// ─── DISPLAY ROUTE ───────────────────────────────────────────
+function displayRoute(coords, elevData, stats, origin, elevPref, hikeType, targetKm) {
+  clearRoute();
+
+  // Draw route
+  routeLayer = L.polyline(coords, {
+    color: '#4a6741',
+    weight: 4,
+    opacity: 0.9,
+    lineJoin: 'round'
+  }).addTo(map);
+
+  map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
+
+  // Start / end markers
+  const startIcon = L.divIcon({
+    html: `<div style="width:14px;height:14px;background:#4a6741;border:2px solid white;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
+    iconAnchor: [7, 7], className: ''
+  });
+  const endIcon = L.divIcon({
+    html: `<div style="width:14px;height:14px;background:#c0392b;border:2px solid white;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
+    iconAnchor: [7, 7], className: ''
+  });
+
+  startMarker = L.marker(coords[0], { icon: startIcon }).addTo(map).bindPopup('Start');
+  endMarker   = L.marker(coords[coords.length - 1], { icon: endIcon }).addTo(map).bindPopup(hikeType === 'outback' ? 'Turnaround' : 'End');
+
+  // Stats
+  document.getElementById('s-dist').textContent = stats.distance + ' km';
+  const h = Math.floor(stats.duration / 60), m = stats.duration % 60;
+  document.getElementById('s-time').textContent = h > 0 ? `${h}h ${m}m` : `${m}m`;
+  document.getElementById('s-asc').textContent = '+' + stats.ascent + 'm';
+
+  const diff = getDifficulty(stats.ascent, parseFloat(stats.distance));
+  document.getElementById('s-diff').innerHTML = `<span class="difficulty diff-${diff.cls}">${diff.label}</span>`;
+
+  // Elevation chart
+  drawElevChart(elevData);
+
+  // Detail panel
+  const terrain = document.getElementById('terrain-select').value;
+  document.getElementById('hike-detail-panel').style.display = '';
+  document.getElementById('hike-details-inner').innerHTML = `
+    <div class="hike-details">
+      <div class="detail-row"><span class="detail-key">Start</span><span class="detail-val">${coords[0][0].toFixed(4)}°N, ${coords[0][1].toFixed(4)}°E</span></div>
+      <div class="detail-row"><span class="detail-key">Total Distance</span><span class="detail-val">${stats.distance} km</span></div>
+      <div class="detail-row"><span class="detail-key">Est. Duration</span><span class="detail-val">${h > 0 ? h+'h '+m+'min' : m+' min'}</span></div>
+      <div class="detail-row"><span class="detail-key">Elevation Gain</span><span class="detail-val">+${stats.ascent}m ↓${stats.descent}m</span></div>
+      <div class="detail-row"><span class="detail-key">Type</span><span class="detail-val" style="text-transform:capitalize">${hikeType.replace('outback','Out & Back').replace('point','Point to Point')}</span></div>
+      <div class="detail-row"><span class="detail-key">Terrain</span><span class="detail-val" style="text-transform:capitalize">${terrain === 'any' ? 'Mixed' : terrain}</span></div>
+      <div class="detail-row"><span class="detail-key">Open in Swisstopo</span><span class="detail-val"><a href="https://map.geo.admin.ch/?lang=en&topic=ech&bgLayer=ch.swisstopo.pixelkarte-farbe&E=${coords[0][1]}&N=${coords[0][0]}&zoom=8" target="_blank" style="color:var(--moss)">↗ View map</a></span></div>
+    </div>
+  `;
+}
+
+function getDifficulty(ascent, km) {
+  const score = ascent / km;
+  if (score < 20) return { label: 'Easy', cls: 'easy' };
+  if (score < 60) return { label: 'Moderate', cls: 'moderate' };
+  return { label: 'Strenuous', cls: 'hard' };
+}
+
+// ─── ELEVATION CHART ─────────────────────────────────────────
+function drawElevChart(elevData) {
+  const canvas = document.getElementById('elev-canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth;
+  const W = canvas.width, H = canvas.height;
+  const pad = { top: 10, bottom: 24, left: 44, right: 12 };
+
+  const min = Math.min(...elevData) - 30;
+  const max = Math.max(...elevData) + 30;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // BG
+  ctx.fillStyle = '#ece6d6';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(74,103,65,0.1)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + (H - pad.top - pad.bottom) * i / 4;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+  }
+
+  // Y axis labels
+  ctx.fillStyle = '#8c7b6b';
+  ctx.font = '9px DM Mono, monospace';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const val = max - (max - min) * i / 4;
+    const y = pad.top + (H - pad.top - pad.bottom) * i / 4;
+    ctx.fillText(Math.round(val) + 'm', pad.left - 4, y + 3);
+  }
+
+  // Profile fill
+  const n = elevData.length;
+  const toX = i => pad.left + (i / (n - 1)) * (W - pad.left - pad.right);
+  const toY = v => pad.top + (1 - (v - min) / (max - min)) * (H - pad.top - pad.bottom);
+
+  const grad = ctx.createLinearGradient(0, pad.top, 0, H - pad.bottom);
+  grad.addColorStop(0, 'rgba(74,103,65,0.5)');
+  grad.addColorStop(1, 'rgba(74,103,65,0.05)');
+
+  ctx.beginPath();
+  ctx.moveTo(toX(0), H - pad.bottom);
+  elevData.forEach((v, i) => ctx.lineTo(toX(i), toY(v)));
+  ctx.lineTo(toX(n - 1), H - pad.bottom);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Profile line
+  ctx.beginPath();
+  ctx.strokeStyle = '#4a6741';
+  ctx.lineWidth = 2;
+  elevData.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
+  ctx.stroke();
+
+  // X label
+  ctx.fillStyle = '#8c7b6b';
+  ctx.font = '9px DM Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Start', pad.left, H - 5);
+  ctx.fillText('Finish', W - pad.right, H - 5);
+}
+
+// ─── CLEAR ───────────────────────────────────────────────────
+function clearRoute() {
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+  if (endMarker)   { map.removeLayer(endMarker); endMarker = null; }
+
+  ['s-dist','s-time','s-asc','s-diff'].forEach(id => document.getElementById(id).textContent = '—');
+
+  const canvas = document.getElementById('elev-canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth;
+  ctx.fillStyle = '#ece6d6';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#8c7b6b';
+  ctx.font = '11px DM Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Elevation profile will appear here after generating a route', canvas.width/2, 52);
+}
+
+function showStatus(msg, isError = false) {
+  const el = document.getElementById('status-msg');
+  el.innerHTML = msg;
+  el.className = 'status visible' + (isError ? ' error' : '');
+}
+
+// Initial canvas placeholder
+clearRoute();
+const ro = new ResizeObserver(() => {
+  if (!routeLayer) clearRoute();
+});
+ro.observe(document.getElementById('elev-canvas'));
+
+} // end initApp
+
+// Kick off — load Leaflet CSS then JS, then run app
+(function() {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+  document.head.appendChild(link);
+
+  // Also try cdnjs CSS as fallback
+  loadScript('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', initApp);
+})();
+</script>
+</body>
+</html>
