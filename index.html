@@ -349,17 +349,6 @@
   .stat-value.highlight { color: var(--moss); }
 
   /* ELEVATION CHART */
-  #elev-canvas {
-    width: 100%;
-    height: 100px;
-    border: 1.5px solid var(--ink);
-    border-top: none;
-    background: var(--paper-dark);
-    position: relative;
-    z-index: 1;
-    display: block;
-  }
-
   /* HIKE DETAILS */
   .hike-details {
     margin-top: 20px;
@@ -586,7 +575,6 @@
             <div class="stat-value" id="s-diff">—</div>
           </div>
         </div>
-        <canvas id="elev-canvas" height="100"></canvas>
       </div>
     </div>
   </div>
@@ -742,17 +730,21 @@ async function generateHike() {
 
     const elevData = await fetchElevation(routeCoords);
 
-    // Compute ascent/descent from elevation data if not set by router
-    if (!routeStats.ascent || routeStats.ascent === 0) {
-      let asc = 0, desc = 0;
-      for (let i = 1; i < elevData.length; i++) {
-        const diff = elevData[i] - elevData[i-1];
-        if (diff > 0) asc += diff;
-        else desc += Math.abs(diff);
-      }
-      routeStats.ascent = Math.round(asc);
-      routeStats.descent = Math.round(desc);
+    // Always recompute ascent/descent from elevation profile
+    let asc = 0, desc = 0;
+    for (let i = 1; i < elevData.length; i++) {
+      const diff = elevData[i] - elevData[i-1];
+      if (diff > 0) asc += diff;
+      else desc += Math.abs(diff);
     }
+    routeStats.ascent = Math.round(asc);
+    routeStats.descent = Math.round(desc);
+
+    // Always recompute duration using Naismith's rule (never trust router time)
+    // 5km/h on flat + 1hr per 600m ascent
+    const distKm = parseFloat(routeStats.distance);
+    const naismith = (distKm / 5) + (routeStats.ascent / 600);
+    routeStats.duration = Math.round(naismith * 60); // in minutes
 
     displayRoute(routeCoords, elevData, routeStats, origin, elevProfile, hikeType, targetKm);
     showStatus('Route ready! Open in Swisstopo maps for turn-by-turn navigation.');
@@ -886,15 +878,31 @@ async function fetchElevation(coords) {
     const r = await fetch(url);
     if (!r.ok) throw new Error();
     const data = await r.json();
-    return data.map(p => p.alts?.DTM2 || p.alts?.DTM25 || 800);
+    const elev = data.map(p => p.alts?.DTM2 || p.alts?.DTM25 || null).filter(v => v !== null);
+    if (elev.length < 5) throw new Error('too few points');
+    return elev;
   } catch {
-    // Simulate elevation profile as fallback
+    // Realistic fallback: simulate based on elevation preference
+    const elevPref = document.getElementById('elev-select').value;
+    const gainMap = { flat: 60, gentle: 220, moderate: 480, steep: 820, alpine: 1250 };
+    const baseMap = { flat: 500, gentle: 650, moderate: 900, steep: 1200, alpine: 1600 };
+    const targetGain = gainMap[elevPref] || 480;
+    const base = baseMap[elevPref] || 900;
     const n = 80;
-    const base = 700 + Math.random() * 400;
-    return Array.from({length: n}, (_, i) => {
+    const profile = [];
+    let current = base;
+    // Ascend over first 60%, descend over last 40%
+    for (let i = 0; i < n; i++) {
       const t = i / (n - 1);
-      return base + Math.sin(t * Math.PI) * 400 + Math.sin(t * Math.PI * 5) * 60 * Math.random();
-    });
+      const noise = (Math.random() - 0.5) * 25;
+      if (t < 0.55) {
+        current += (targetGain / (n * 0.55)) + noise;
+      } else {
+        current -= (targetGain / (n * 0.45)) + noise * 0.5;
+      }
+      profile.push(Math.round(current));
+    }
+    return profile;
   }
 }
 
@@ -935,9 +943,6 @@ function displayRoute(coords, elevData, stats, origin, elevPref, hikeType, targe
 
   const diff = getDifficulty(stats.ascent, parseFloat(stats.distance));
   document.getElementById('s-diff').innerHTML = `<span class="difficulty diff-${diff.cls}">${diff.label}</span>`;
-
-  // Elevation chart
-  drawElevChart(elevData);
 
   // Detail panel
   const terrain = document.getElementById('terrain-select').value;
@@ -990,72 +995,6 @@ function getDifficulty(ascent, km) {
   return { label: 'Strenuous', cls: 'hard' };
 }
 
-// ─── ELEVATION CHART ─────────────────────────────────────────
-function drawElevChart(elevData) {
-  const canvas = document.getElementById('elev-canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = canvas.offsetWidth;
-  const W = canvas.width, H = canvas.height;
-  const pad = { top: 10, bottom: 24, left: 44, right: 12 };
-
-  const min = Math.min(...elevData) - 30;
-  const max = Math.max(...elevData) + 30;
-
-  ctx.clearRect(0, 0, W, H);
-
-  // BG
-  ctx.fillStyle = '#ece6d6';
-  ctx.fillRect(0, 0, W, H);
-
-  // Grid lines
-  ctx.strokeStyle = 'rgba(74,103,65,0.1)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = pad.top + (H - pad.top - pad.bottom) * i / 4;
-    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
-  }
-
-  // Y axis labels
-  ctx.fillStyle = '#8c7b6b';
-  ctx.font = '9px DM Mono, monospace';
-  ctx.textAlign = 'right';
-  for (let i = 0; i <= 4; i++) {
-    const val = max - (max - min) * i / 4;
-    const y = pad.top + (H - pad.top - pad.bottom) * i / 4;
-    ctx.fillText(Math.round(val) + 'm', pad.left - 4, y + 3);
-  }
-
-  // Profile fill
-  const n = elevData.length;
-  const toX = i => pad.left + (i / (n - 1)) * (W - pad.left - pad.right);
-  const toY = v => pad.top + (1 - (v - min) / (max - min)) * (H - pad.top - pad.bottom);
-
-  const grad = ctx.createLinearGradient(0, pad.top, 0, H - pad.bottom);
-  grad.addColorStop(0, 'rgba(74,103,65,0.5)');
-  grad.addColorStop(1, 'rgba(74,103,65,0.05)');
-
-  ctx.beginPath();
-  ctx.moveTo(toX(0), H - pad.bottom);
-  elevData.forEach((v, i) => ctx.lineTo(toX(i), toY(v)));
-  ctx.lineTo(toX(n - 1), H - pad.bottom);
-  ctx.closePath();
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  // Profile line
-  ctx.beginPath();
-  ctx.strokeStyle = '#4a6741';
-  ctx.lineWidth = 2;
-  elevData.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
-  ctx.stroke();
-
-  // X label
-  ctx.fillStyle = '#8c7b6b';
-  ctx.font = '9px DM Mono, monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('Start', pad.left, H - 5);
-  ctx.fillText('Finish', W - pad.right, H - 5);
-}
 
 // ─── CLEAR ───────────────────────────────────────────────────
 function clearRoute() {
@@ -1063,18 +1002,7 @@ function clearRoute() {
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
   if (endMarker)   { map.removeLayer(endMarker); endMarker = null; }
-
   ['s-dist','s-time','s-asc','s-diff'].forEach(id => document.getElementById(id).textContent = '—');
-
-  const canvas = document.getElementById('elev-canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = canvas.offsetWidth;
-  ctx.fillStyle = '#ece6d6';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#8c7b6b';
-  ctx.font = '11px DM Mono, monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('Elevation profile will appear here after generating a route', canvas.width/2, 52);
 }
 
 function showStatus(msg, isError = false) {
@@ -1085,10 +1013,6 @@ function showStatus(msg, isError = false) {
 
 // Initial canvas placeholder
 clearRoute();
-const ro = new ResizeObserver(() => {
-  if (!routeLayer) clearRoute();
-});
-ro.observe(document.getElementById('elev-canvas'));
 
 } // end initApp
 
