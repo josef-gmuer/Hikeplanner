@@ -635,6 +635,7 @@ swisstopoHiking.addTo(map);
 // ─── STATE ───────────────────────────────────────────────────
 let currentMode = 'time';
 let routeLayer = null;
+let haloLayer = null;
 let startMarker = null;
 let endMarker = null;
 
@@ -860,24 +861,26 @@ async function fetchElevation(coords) {
 function displayRoute(coords, elevData, stats, origin, elevPref, hikeType, targetKm) {
   clearRoute();
 
-  // Draw route
+  // Draw route — white halo + bright orange line for visibility on any basemap
+  const halo = L.polyline(coords, {
+    color: 'white', weight: 9, opacity: 1, lineJoin: 'round', lineCap: 'round'
+  }).addTo(map);
+  haloLayer = halo;
+
   routeLayer = L.polyline(coords, {
-    color: '#4a6741',
-    weight: 4,
-    opacity: 0.9,
-    lineJoin: 'round'
+    color: '#e8420a', weight: 5, opacity: 1, lineJoin: 'round', lineCap: 'round'
   }).addTo(map);
 
   map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
 
   // Start / end markers
   const startIcon = L.divIcon({
-    html: `<div style="width:14px;height:14px;background:#4a6741;border:2px solid white;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
-    iconAnchor: [7, 7], className: ''
+    html: `<div style="width:18px;height:18px;background:#2ecc71;border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.5)"></div>`,
+    iconAnchor: [9, 9], className: ''
   });
   const endIcon = L.divIcon({
-    html: `<div style="width:14px;height:14px;background:#c0392b;border:2px solid white;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
-    iconAnchor: [7, 7], className: ''
+    html: `<div style="width:18px;height:18px;background:#e8420a;border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.5)"></div>`,
+    iconAnchor: [9, 9], className: ''
   });
 
   startMarker = L.marker(coords[0], { icon: startIcon }).addTo(map).bindPopup('Start');
@@ -906,7 +909,7 @@ function displayRoute(coords, elevData, stats, origin, elevPref, hikeType, targe
       <div class="detail-row"><span class="detail-key">Elevation Gain</span><span class="detail-val">+${stats.ascent}m ↓${stats.descent}m</span></div>
       <div class="detail-row"><span class="detail-key">Type</span><span class="detail-val" style="text-transform:capitalize">${hikeType.replace('outback','Out & Back').replace('point','Point to Point')}</span></div>
       <div class="detail-row"><span class="detail-key">Terrain</span><span class="detail-val" style="text-transform:capitalize">${terrain === 'any' ? 'Mixed' : terrain}</span></div>
-      <div class="detail-row"><span class="detail-key">Open in Swisstopo</span><span class="detail-val"><a href="https://map.geo.admin.ch/?lang=en&topic=ech&bgLayer=ch.swisstopo.pixelkarte-farbe&E=${coords[0][1]}&N=${coords[0][0]}&zoom=8" target="_blank" style="color:var(--moss)">↗ View map</a></span></div>
+      <div class="detail-row"><span class="detail-key">Open in Swisstopo</span><span class="detail-val"><a href="https://map.geo.admin.ch/?lang=en&topic=ech&bgLayer=ch.swisstopo.pixelkarte-farbe&layers=ch.swisstopo.swisstlm3d-wanderwege&catalogNodes=531&E=${coords[0][1].toFixed(6)}&N=${coords[0][0].toFixed(6)}&zoom=8&crosshair=marker" target="_blank" style="color:var(--moss)">↗ Open in Swisstopo</a></span></div>
     </div>
   `;
 }
@@ -987,6 +990,7 @@ function drawElevChart(elevData) {
 
 // ─── CLEAR ───────────────────────────────────────────────────
 function clearRoute() {
+  if (haloLayer)  { map.removeLayer(haloLayer); haloLayer = null; }
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
   if (endMarker)   { map.removeLayer(endMarker); endMarker = null; }
