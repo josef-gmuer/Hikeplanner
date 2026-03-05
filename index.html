@@ -716,25 +716,43 @@ async function generateHike() {
   showStatus('<span class="spinner"></span>Planning route…');
 
   try {
-    // Generate waypoints based on elevation preference
     const waypoints = generateWaypoints(origin.lat, origin.lon, targetKm, elevProfile, hikeType);
 
-    // Try OpenRouteService for actual routing
-    showStatus('<span class="spinner"></span>Routing via trails…');
+    showStatus('<span class="spinner"></span>Snapping route to trails (OSRM)…');
     let routeCoords, routeStats;
 
     try {
-      const result = await routeWithORS(waypoints);
+      // Try OSRM first — free, no key, snaps to real footpaths
+      const result = await routeWithOSRM(waypoints);
       routeCoords = result.coords;
       routeStats = result.stats;
-    } catch(e) {
-      // Fallback: straight-line simulated route
-      routeCoords = waypoints.map(w => [w[1], w[0]]); // ORS returns [lng,lat], leaflet needs [lat,lng]
-      routeStats = simulateStats(routeCoords, targetKm, elevProfile);
+      showStatus('<span class="spinner"></span>Fetching elevation profile…');
+    } catch(e1) {
+      try {
+        showStatus('<span class="spinner"></span>Trying ORS routing…');
+        const result = await routeWithORS(waypoints);
+        routeCoords = result.coords;
+        routeStats = result.stats;
+      } catch(e2) {
+        // Last resort: straight waypoints with simulated stats
+        routeCoords = waypoints.map(w => [w[1], w[0]]);
+        routeStats = simulateStats(routeCoords, targetKm, elevProfile);
+      }
     }
 
-    showStatus('<span class="spinner"></span>Fetching elevation profile…');
-    const elevData = await fetchElevation(routeCoords.slice(0, 50)); // sample 50 pts
+    const elevData = await fetchElevation(routeCoords);
+
+    // Compute ascent/descent from elevation data if not set by router
+    if (!routeStats.ascent || routeStats.ascent === 0) {
+      let asc = 0, desc = 0;
+      for (let i = 1; i < elevData.length; i++) {
+        const diff = elevData[i] - elevData[i-1];
+        if (diff > 0) asc += diff;
+        else desc += Math.abs(diff);
+      }
+      routeStats.ascent = Math.round(asc);
+      routeStats.descent = Math.round(desc);
+    }
 
     displayRoute(routeCoords, elevData, routeStats, origin, elevProfile, hikeType, targetKm);
     showStatus('Route ready! Open in Swisstopo maps for turn-by-turn navigation.');
@@ -787,26 +805,48 @@ function generateWaypoints(lat, lon, km, elevPref, type) {
   return pts;
 }
 
-// ─── ROUTE VIA ORS ──────────────────────────────────────────
-async function routeWithORS(waypoints) {
-  // ORS public demo key — limited but works for demo
-  const url = 'https://api.openrouteservice.org/v2/directions/foot-hiking/geojson';
-  const body = {
-    coordinates: waypoints,
-    elevation: true
-  };
+// ─── ROUTE VIA OSRM (no key needed) ─────────────────────────
+async function routeWithOSRM(waypoints) {
+  // OSRM public API — foot profile, snaps to real paths
+  const coords = waypoints.map(w => `${w[0]},${w[1]}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/foot/${coords}?overview=full&geometries=geojson&steps=false`;
 
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('OSRM unavailable');
+  const data = await resp.json();
+  if (data.code !== 'Ok') throw new Error('No route found');
+
+  const route = data.routes[0];
+  const latLngs = route.geometry.coordinates.map(c => [c[1], c[0]]);
+  const distKm = (route.distance / 1000).toFixed(1);
+  const durMin = Math.round(route.duration / 60);
+
+  return {
+    coords: latLngs,
+    stats: {
+      distance: distKm,
+      duration: durMin,
+      ascent: 0,   // will be filled from elevation profile
+      descent: 0
+    }
+  };
+}
+
+// ─── ROUTE VIA ORS (with key fallback) ──────────────────────
+async function routeWithORS(waypoints) {
+  const url = 'https://api.openrouteservice.org/v2/directions/foot-hiking/geojson';
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': '5b3ce3597851110001cf624875e4f0f9efe14dcd97f9b0e07c9e2e9b' // public demo key
+      'Authorization': '5b3ce3597851110001cf624875e4f0f9efe14dcd97f9b0e07c9e2e9b'
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify({ coordinates: waypoints, elevation: true })
   });
 
   if (!resp.ok) throw new Error('ORS unavailable');
   const data = await resp.json();
+  if (!data.features?.[0]) throw new Error('No ORS route');
   const coords = data.features[0].geometry.coordinates.map(c => [c[1], c[0]]);
   const summary = data.features[0].properties.summary;
 
@@ -835,20 +875,21 @@ function simulateStats(coords, km, elevPref) {
 // ─── ELEVATION via Swisstopo ─────────────────────────────────
 async function fetchElevation(coords) {
   try {
-    // Sample every Nth point for the elevation profile
-    const sample = coords.filter((_, i) => i % Math.ceil(coords.length / 50) === 0);
-    const points = sample.map(c => `${c[1]},${c[0]}`).join('|');
-    const url = `https://api3.geo.admin.ch/rest/services/profile.json?geom={"type":"LineString","coordinates":[${
-      sample.map(c => `[${c[1]},${c[0]}]`).join(',')
-    }]}&sr=4326&nb_points=50`;
+    const maxPts = 100;
+    const step = Math.max(1, Math.floor(coords.length / maxPts));
+    const sample = coords.filter((_, i) => i % step === 0);
+    if (sample[sample.length-1] !== coords[coords.length-1]) sample.push(coords[coords.length-1]);
+
+    const geom = JSON.stringify({ type: 'LineString', coordinates: sample.map(c => [c[1], c[0]]) });
+    const url = `https://api3.geo.admin.ch/rest/services/profile.json?geom=${encodeURIComponent(geom)}&sr=4326&nb_points=${sample.length}`;
 
     const r = await fetch(url);
     if (!r.ok) throw new Error();
     const data = await r.json();
     return data.map(p => p.alts?.DTM2 || p.alts?.DTM25 || 800);
   } catch {
-    // Simulate elevation profile
-    const n = 50;
+    // Simulate elevation profile as fallback
+    const n = 80;
     const base = 700 + Math.random() * 400;
     return Array.from({length: n}, (_, i) => {
       const t = i / (n - 1);
@@ -909,9 +950,37 @@ function displayRoute(coords, elevData, stats, origin, elevPref, hikeType, targe
       <div class="detail-row"><span class="detail-key">Elevation Gain</span><span class="detail-val">+${stats.ascent}m ↓${stats.descent}m</span></div>
       <div class="detail-row"><span class="detail-key">Type</span><span class="detail-val" style="text-transform:capitalize">${hikeType.replace('outback','Out & Back').replace('point','Point to Point')}</span></div>
       <div class="detail-row"><span class="detail-key">Terrain</span><span class="detail-val" style="text-transform:capitalize">${terrain === 'any' ? 'Mixed' : terrain}</span></div>
-      <div class="detail-row"><span class="detail-key">Open in Swisstopo</span><span class="detail-val"><a href="https://map.geo.admin.ch/?lang=en&topic=ech&bgLayer=ch.swisstopo.pixelkarte-farbe&layers=ch.swisstopo.swisstlm3d-wanderwege&catalogNodes=531&E=${coords[0][1].toFixed(6)}&N=${coords[0][0].toFixed(6)}&zoom=8&crosshair=marker" target="_blank" style="color:var(--moss)">↗ Open in Swisstopo</a></span></div>
+      <div class="detail-row"><span class="detail-key">Open in Swisstopo</span><span class="detail-val"><a href="${buildSwisstopoUrl(coords[0])}" target="_blank" style="color:var(--moss)">↗ Open in Swisstopo</a></span></div>
     </div>
   `;
+}
+
+// ─── WGS84 → LV95 conversion (official Swiss formula) ───────
+function wgs84ToLV95(lat, lng) {
+  // Auxiliary values
+  const lat_ = (lat * 3600 - 169028.66) / 10000;
+  const lng_ = (lng * 3600 - 26782.5)   / 10000;
+  const E = 2600072.37
+    + 211455.93 * lng_
+    -  10938.51 * lng_ * lat_
+    -      0.36 * lng_ * lat_ * lat_
+    -     44.54 * lng_ * lng_ * lng_;
+  const N = 1200147.07
+    + 308807.95 * lat_
+    +   3745.25 * lng_ * lng_
+    +     76.63 * lat_ * lat_
+    -   194.56 * lng_ * lng_ * lat_
+    +    119.79 * lat_ * lat_ * lat_;
+  return { E: Math.round(E), N: Math.round(N) };
+}
+
+function buildSwisstopoUrl(coord) {
+  // coord is [lat, lng]
+  const { E, N } = wgs84ToLV95(coord[0], coord[1]);
+  return `https://map.geo.admin.ch/?lang=en&topic=ech` +
+    `&bgLayer=ch.swisstopo.pixelkarte-farbe` +
+    `&layers=ch.swisstopo.swisstlm3d-wanderwege` +
+    `&E=${E}&N=${N}&zoom=8&crosshair=marker`;
 }
 
 function getDifficulty(ascent, km) {
